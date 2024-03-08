@@ -12,6 +12,7 @@ const Tanks = require('./schemas/Tanks')
 const Sessions = require('./schemas/Sessions')  
 const Heroes = require('./schemas/Heroes')  
 const Areas = require('./schemas/Areas')  
+const Replays = require('./schemas/Replays')  
 
 // microservices
 
@@ -50,9 +51,10 @@ const typeDefs = gql`
         title: String!,
         category: String!,
         volume: Float!,
+        time: String!,
+        weekday: String!,
         status: String!,
         image: String!,
-        dateUp: String!,
         supports: Float!
     }
     type Characteristic {
@@ -141,6 +143,48 @@ const typeDefs = gql`
         level: String!,
         isTrue: Boolean!
     }
+    type Nomination {
+        id: String!,
+        label: String!,
+        golda: Float!,
+        level: Float!
+    }
+    input INomination {
+        id: String!,
+        label: String!,
+        golda: Float!,
+        level: Float!
+    }
+    type Record {
+        shortid: String!,
+        name: String!,
+        title: String!,
+        label: String!,
+        url: String!,
+        image: String!,
+        likes: Float!
+    }
+    type Situation {
+        shortid: String!,
+        name: String!,
+        text: String!,
+        category: String!,
+        ratio: Float!,
+        time: String!,
+        exodus: String!
+    }
+    type Replay {
+        id: ID!,
+        shortid: String!,
+        nickname: String!,
+        title: String!,
+        category: String!,
+        server: String!,
+        nation: String!,
+        nominations: [Nomination]!,
+        records: [Record]!,
+        situations: [Situation]!
+    }
     type Area {
         id: ID!,
         shortid: String!,
@@ -218,6 +262,7 @@ const typeDefs = gql`
         getSessions: [Session]!
         getHeroes: [Hero]!
         getAreas: [Area]!
+        getReplays: [Replay]!
     }
     type Mutation {
         createProfile(nickname: String!, password: String!, telegram: String!, server: String!, nation: String!, region: String!, cords: ICord!, main_photo: String!) : UserCookie!
@@ -227,7 +272,7 @@ const typeDefs = gql`
         updateProfileGeoInfo(account_id: String!, region: String!, cords: ICord!) : String!
         updateProfileCommonInfo(account_id: String!, server: String!, nation: String!) : String!
         updateProfilePassword(account_id: String!, current_password: String!, new_password: String!) : String!
-        manageProfileMission(account_id: String!, option: String!, title: String!, category: String!, volume: Float!, status: String!, image: String!, dateUp: String!, coll_id: String!) : String!
+        manageProfileMission(account_id: String!, option: String!, title: String!, category: String!, volume: Float!, time: String!, weekday: String!, status: String!, image: String!, coll_id: String!) : String!
         createTank(nickname: String!, id: String!, title: String!, category: String!, nation: String!, role: String!, level: Float!, experience: Float!, dateUp: String!) : String!
         getTank(shortid: String!) : Tank!
         makeTankCharacteristic(nickname: String!, id: String!, text: String!, category: String!, volume: Float!) : String!
@@ -248,6 +293,11 @@ const typeDefs = gql`
         manageAreaLocation(nickname: String!, id: String!, option: String!, title: String!, category: String!, position: String!, cords: ICord!, image: String!, coll_id: String!) : String!
         updateAreaSettings(nickname: String!, id: String!, tier: Float!, duration: Float!) : String!
         makeAreaFact(nickname: String!, id: String!, text: String!, level: String!, isTrue: Boolean!) : String!
+        createReplay(nickname: String!, id: String!, title: String!, category: String!, server: String!, nation: String!, nominations: [INomination]!) : String!
+        getReplay(shortid: String!) : Replay!
+        manageReplayRecord(nickname: String!, id: String!, option: String!, title: String!, label: String!, url: String!, image: String!, coll_id: String!) : String!
+        updateReplayNomination(nickname: String!, id: String!, coll_id: String!, golda: Float!, level: Float!) : String!
+        makeReplaySituation(nickname: String!, id: String!, text: String!, category: String!, ratio: Float!, time: String!, exodus: String!) : String!
         sendFeedback(nickname: String!, category: String!, msg: String!) : String!
     }
 `
@@ -278,6 +328,11 @@ const resolvers = {
             const areas = await Areas.find()
 
             return areas
+        },
+        getReplays: async () => {
+            const replays = await Replays.find()
+
+            return replays
         }
     },
     Mutation: {
@@ -392,7 +447,7 @@ const resolvers = {
 
             return PASSWORD_FALL
         },
-        manageProfileMission: async (_, {account_id, option, title, category, volume, status, image, dateUp, coll_id}) => {
+        manageProfileMission: async (_, {account_id, option, title, category, volume, time, weekday, status, image, dateUp, coll_id}) => {
             const profile = await Profiles.findOne({account_id}) 
 
             if (profile) {
@@ -408,9 +463,10 @@ const resolvers = {
                         title,
                         category,
                         volume,
+                        time,
+                        weekday,
                         status,
                         image,
-                        dateUp,
                         supports: 0
                     }]
 
@@ -1087,6 +1143,144 @@ const resolvers = {
 
             return AREA_FACT_FALL
         },
+        createReplay: async (_, {nickname, id, title, category, server, nation, nominations}) => {
+            const profile = await Profiles.findOne({nickname, account_id: id})
+            const replay = await Replays.findOne({title, category, server})
+
+            if (profile && !replay) {
+                if (profile.account_components.filter(el => el.path === REPLAY_PATHAME).find(el => el.title === title) === undefined) {
+
+                    let shortid = get_id()
+
+                    profile.account_components = [...profile.account_components, {
+                        shortid,
+                        title,
+                        path: REPLAY_PATHAME
+                    }]
+
+                    const newReplay = new Replays({
+                        shortid,
+                        nickname: profile.nickname,
+                        title,
+                        category,
+                        server,
+                        nation,
+                        nominations,
+                        records: [],
+                        situations: []
+                    })
+
+                    await Profiles.updateOne({nickname, account_id: id}, {$set: profile})
+                    await newReplay.save()
+
+                    return REPLAY_CREATED
+                }
+            }
+
+            return REPLAY_FALL
+        },
+        getReplay: async (_, {shortid}) => {
+            const replay = await Replays.findOne({shortid})
+
+            return replay
+        },
+        manageReplayRecord: async (_, {nickname, id, option, title, label, url, image, coll_id}) => {
+            const profile = await Profiles.findOne({nickname})
+            const replay = await Replays.findOne({shortid: id})
+
+            if (profile && replay) {
+
+                let feedback = ''
+
+                if (option === 'create') {
+
+                    let shortid = get_id()
+
+                    replay.records = [...replay.records, {
+                        shortid,
+                        name: profile.nickname,
+                        title,
+                        label,
+                        url,
+                        image,
+                        likes: 0
+                    }]
+
+                    replay.records = slicer(replay.records, limit)
+                    
+                    feedback = REPLAY_RECORD_CREATED
+                    
+                } else if (option === 'like') {
+
+                    replay.records.map(el => {
+                        if (el.shortid === coll_id) {
+                            el.likes += 1
+                        }
+                    })
+                    
+                    feedback = REPLAY_RECORD_LIKED
+
+                } else {
+
+                    replay.records = replay.records.filter(el => el.shortid !== coll_id)
+
+                    feedback = REPLAY_RECORD_DELETED
+                }
+
+                await Replays.updateOne({shortid: id}, {$set: replay})
+
+                return feedback
+            }
+
+            return REPLAY_RECORD_FALL
+        },
+        updateReplayNomination: async (_, {nickname, id, coll_id, golda, level}) => {
+            const profile = await Profiles.findOne({nickname})
+            const replay = await Replays.findOne({shortid: id})
+
+            if (profile && replay) {
+
+                replay.nominations.map(el => {
+                    if (el.id === coll_id) {
+                        el.golda = golda
+                        el.level = level
+                    }
+                })
+            
+                await Replays.updateOne({shortid: id}, {$set: replay})
+
+                return REPLAY_NOMINATION_UPDATED
+            }
+
+            return REPLAY_NOMINATION_FALL
+        },
+        makeReplaySituation: async (_, {nickname, id, text, category, ratio, time, exodus}) => {
+            const profile = await Profiles.findOne({nickname})
+            const replay = await Replays.findOne({shortid: id})
+
+            if (profile && replay) {
+                
+                let shortid = get_id()
+
+                replay.situations = [...replay.situations, {
+                    shortid,
+                    name: profile.nickname,
+                    text,
+                    category,
+                    ratio,
+                    time,
+                    exodus
+                }]
+
+                replay.situations = slicer(replay.situations, limit)
+
+                await Replays.updateOne({shortid: id}, {$set: replay})
+
+                return REPLAY_SITUATION_CREATED
+            }
+
+            return REPLAY_SITUATION_FALL
+        },
         sendFeedback: async (_, {nickname, category, msg}) => {
             await feedbackEmail(nickname, category, msg)
 
@@ -1145,3 +1339,11 @@ const {
     AREA_FACT_CREATED, AREA_FACT_FALL,
     AREA_PATHNAME
 } = require('./gql-statuses/area')
+
+const {
+    REPLAY_CREATED, REPLAY_FALL,
+    REPLAY_NOMINATION_UPDATED, REPLAY_NOMINATION_FALL,
+    REPLAY_RECORD_CREATED, REPLAY_RECORD_LIKED, REPLAY_RECORD_DELETED,REPLAY_RECORD_FALL,
+    REPLAY_SITUATION_CREATED, REPLAY_SITUATION_FALL,
+    REPLAY_PATHAME
+} = require('./gql-statuses/replay')

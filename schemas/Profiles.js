@@ -18,9 +18,10 @@ const Profiles = new Schema({
         title: String,
         category: String,
         volume: Number,
+        time: String,
+        weekday: String,
         status: String,
         image: String,
-        dateUp: String,
         supports: Number
     }],
     account_components: [{
